@@ -12,6 +12,7 @@ import base64
 import os
 import json
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 # # creds = credentials.Certificate('serviceAccount.json')
 creds = credentials.Certificate({
@@ -578,6 +579,7 @@ def text_story_like_exists():
     return jsonify({"like-exists":like_exists}), 200
 
 ################################### User Routes ##########################################
+@csrf_exempt
 @app.route('/users/users_info/')
 def get_user_info(request):
     if request.method == 'GET':
@@ -592,8 +594,9 @@ def get_user_info(request):
       except Exception as e:
         return JsonResponse({'message': str(e)}, status=500)
 
+@csrf_exempt
 @app.route('/users/alltime_popular/')
-def get_users():
+def get_users(request):
     if request.method == 'GET':
       try:
         data = json.loads(request.body)
