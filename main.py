@@ -10,6 +10,8 @@ from flask_mail import Mail, Message
 from tzlocal import get_localzone
 import base64
 import os
+import json
+from django.http import JsonResponse
 
 # # creds = credentials.Certificate('serviceAccount.json')
 creds = credentials.Certificate({
@@ -538,6 +540,7 @@ def get_text_stories():
         else:
             final_lst.append({"id": _["uid"], "data": _})
     return jsonify(final_lst), 200
+    
 @app.route("/feeds/photoStories/likeExists")
 def photo_story_like_exists():
     """checks if a user has liked a photo story, with query parameters for storyId (the ID of the story to check) and checkId (the ID of the user to check)"""
@@ -575,58 +578,58 @@ def text_story_like_exists():
     return jsonify({"like-exists":like_exists}), 200
 
 ################################### User Routes ##########################################
-@app.route('/users')
-def get_user():
-    """ retrieves user data for a specific user, with query parameter inputId (the ID of the user to retrieve data for)"""
-    inputId = request.args.get('inputId')
-    if not inputId:
-        return jsonify({"success": False, "Provide query" : "inputId"}), 500
-    req_user = [doc.to_dict() for doc in user_ref.where("uid", "==", f"{inputId}").stream()]
-    return jsonify(req_user), 200
-
-@app.route('/users/list')
-def get_users():
-    """retrieves a list of users sorted by popularity, with optional query parameters for inputId (the ID of the user making the request), country (a filter for users in a specific country), timeZone (the user's local time zone), page (the current page number), and page_size (the number of users to include per page)"""
-    inputId = request.args.get('inputId')
-    country = request.args.get('country')
-    user_timezone = request.args.get('timeZone')
-    page = request.args.get('page', default=1, type=int)
-    page_size = request.args.get('page_size', default=10, type=int)
-    if not country:
-        query = user_ref.order_by(
-            'popularity', direction=firestore.Query.DESCENDING
-            )
-        results = query.stream()
-        all_users = [doc.to_dict() for doc in results]    
-    else:
-        query = user_ref.order_by(
-            'popularity', direction=firestore.Query.DESCENDING
-            )
-        results = query.stream()
-        all_users = []
-        for doc in results:
-            if doc.to_dict()["country"] == country:
-                all_users.append(doc.to_dict())
-            else:
-                continue
-    
-    # Add timestamp formatting logic here
-    final_lst = []
-    local_tz = pytz.timezone(user_timezone)
-    for user in all_users:
-        user["last_active"] = datetime.datetime.strptime(str(user.get("last_active")), '%Y-%m-%d %H:%M:%S.%f%z').replace(tzinfo=pytz.UTC).astimezone(local_tz).strftime('%A, %d %B %Y %I:%M:%S %p %Z')
-        if user["uid"] != inputId:
-            final_lst.append({"id": user["uid"], "data": user})
+@app.route('/users/users_info/')
+def get_user_info(request):
+    if request.method == 'GET':
+      try:
+        data = json.loads(request.body)
+        inputID = data.get('inputID')
+        if not inputID:
+          return JsonResponse({'message': 'inputID attribute is required'}, status=400)
         else:
-            continue
+          req_user = [doc.to_dict() for doc in user_ref.where("uid", "==", f"{inputID}").stream()]
+          return JsonResponse({'message': 'Success', 'data': req_user})
+      except Exception as e:
+        return JsonResponse({'message': str(e)}, status=500)
+
+@app.route('/users/alltime_popular/')
+def get_users():
+    if request.method == 'GET':
+      try:
+        data = json.loads(request.body)
+        inputID = data.get('inputID')
+        gender = data.get('gender')
+        country = data.get('country')
+        query = user_ref.order_by('popularity', direction=firestore.Query.DESCENDING)
+        results = query.stream()
+
+        if not inputID:
+          return JsonResponse({'message': 'inputID attribute is required'}, status=400)
+
+        if not gender:
+          return JsonResponse({'message': 'gender attribute is required'}, status=400)
         
-    start_index = (page - 1) * page_size
-    end_index = start_index + page_size
-    paginated_users = []
-    for user in final_lst[start_index:end_index]:
-        paginated_users.append(user)
-    last_lst = [{"total": len(paginated_users), "data": paginated_users}]
-    return jsonify(last_lst), 200
+        if not country:
+          return JsonResponse({'message': 'country attribute is required'}, status=400)
+        
+        if gender == "Both":
+          if country == "Worldwide":
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results]
+          else:
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results if country == user.to_dict().get('country')]
+        elif gender == "Male":
+          if country == "Worldwide":
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results if gender == user.to_dict().get('gender')]
+          else:
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results if country == user.to_dict().get('country') and gender == user.to_dict().get('gender')]
+        else:
+          if country == "Worldwide":
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results if gender == user.to_dict().get('gender')]
+          else:
+            all_users = [{"id": user.id, "data": user.to_dict()} for user in results if  country == user.to_dict().get('country') and gender == user.to_dict().get('gender')]
+        return JsonResponse({'message': 'Success', 'data': all_users, 'all_users': len(all_users)})
+      except Exception as e:
+        return JsonResponse({'message': str(e)}, status=500)
 
 @app.route('/users/list/weekly')
 def get_weekly():
